@@ -24,5 +24,4 @@ repo/.env.*
 !repo/.env.example
 
 # Local temp outputs
-.tmp/
 *.log
