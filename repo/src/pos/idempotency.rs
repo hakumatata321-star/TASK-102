@@ -1,11 +1,22 @@
 use actix_web::HttpResponse;
 use chrono::Utc;
 use diesel::prelude::*;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::errors::AppError;
 use crate::models::idempotency::{IdempotencyRecord, NewIdempotencyRecord};
 use crate::schema::idempotency_keys;
+
+/// Derive a resource-scoped idempotency key to avoid cross-endpoint key collisions.
+pub fn scoped_key(key: Uuid, resource_type: &str) -> Uuid {
+    let mut hasher = Sha256::new();
+    hasher.update(resource_type.as_bytes());
+    hasher.update(b":");
+    hasher.update(key.as_bytes());
+    let out = hasher.finalize();
+    Uuid::from_slice(&out[..16]).unwrap_or(key)
+}
 
 /// Check if an idempotency key has already been used.
 /// Returns `Some(HttpResponse)` with the cached response if found, `None` if new.
@@ -27,9 +38,8 @@ pub fn check_idempotency(
                 Ok(None)
             } else {
                 // Return cached response
-                let status =
-                    actix_web::http::StatusCode::from_u16(rec.response_status as u16)
-                        .unwrap_or(actix_web::http::StatusCode::OK);
+                let status = actix_web::http::StatusCode::from_u16(rec.response_status as u16)
+                    .unwrap_or(actix_web::http::StatusCode::OK);
                 Ok(Some(HttpResponse::build(status).json(rec.response_body)))
             }
         }

@@ -11,7 +11,7 @@ use crate::models::approval::{ApprovalRequest, ApprovalStatus, NewApprovalReques
 use crate::models::ledger_entry::*;
 use crate::models::order::*;
 use crate::models::order_line_item::*;
-use crate::pos::idempotency::{check_idempotency, store_idempotency, reserve_idempotency_key, finalize_idempotency};
+use crate::pos::idempotency::{check_idempotency, reserve_idempotency_key, finalize_idempotency, scoped_key};
 use crate::rbac::guard::{check_permission, check_permission_for_request, check_permission_no_approval, resolve_permission_id};
 use crate::schema::{approval_requests, ledger_entries, order_line_items, orders};
 
@@ -49,9 +49,10 @@ pub async fn initiate_return(
     let source_order_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
     let ctx = check_permission_for_request(&auth.0, "order.return", req.method().as_str(), req.path(), &mut conn)?;
+    let scoped_idem_key = scoped_key(body.idempotency_key, "return_order");
 
     // Atomic idempotency: check for cached replay first
-    if let Some(cached) = check_idempotency(body.idempotency_key, &mut conn)? {
+    if let Some(cached) = check_idempotency(scoped_idem_key, &mut conn)? {
         return Ok(cached);
     }
 
@@ -71,7 +72,7 @@ pub async fn initiate_return(
 
     let result = conn.transaction::<_, AppError, _>(|conn| {
         // Reserve idempotency key atomically inside transaction
-        if let Some(_cached) = reserve_idempotency_key(body.idempotency_key, "return_order", conn)? {
+        if let Some(_cached) = reserve_idempotency_key(scoped_idem_key, "return_order", conn)? {
             return Err(AppError::Internal("idempotency_race".into()));
         }
         // Validate return line items against originals
@@ -173,7 +174,7 @@ pub async fn initiate_return(
 
     let json =
         serde_json::to_value(&result).map_err(|e| AppError::Internal(e.to_string()))?;
-    finalize_idempotency(body.idempotency_key, result.order.id, 201, &json, &mut conn)?;
+    finalize_idempotency(scoped_idem_key, result.order.id, 201, &json, &mut conn)?;
 
     Ok(HttpResponse::Created().json(result))
 }
@@ -196,9 +197,10 @@ pub async fn initiate_exchange(
     let source_order_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
     let ctx = check_permission_for_request(&auth.0, "order.exchange", req.method().as_str(), req.path(), &mut conn)?;
+    let scoped_idem_key = scoped_key(body.idempotency_key, "exchange_order");
 
     // Atomic idempotency: check for cached replay
-    if let Some(cached) = check_idempotency(body.idempotency_key, &mut conn)? {
+    if let Some(cached) = check_idempotency(scoped_idem_key, &mut conn)? {
         return Ok(cached);
     }
 
@@ -217,7 +219,7 @@ pub async fn initiate_exchange(
 
     let result = conn.transaction::<_, AppError, _>(|conn| {
         // Reserve idempotency key atomically inside transaction
-        if let Some(_cached) = reserve_idempotency_key(body.idempotency_key, "exchange_order", conn)? {
+        if let Some(_cached) = reserve_idempotency_key(scoped_idem_key, "exchange_order", conn)? {
             return Err(AppError::Internal("idempotency_race".into()));
         }
         // --- Return portion ---
@@ -330,7 +332,7 @@ pub async fn initiate_exchange(
 
     let json =
         serde_json::to_value(&result).map_err(|e| AppError::Internal(e.to_string()))?;
-    finalize_idempotency(body.idempotency_key, result.order.id, 201, &json, &mut conn)?;
+    finalize_idempotency(scoped_idem_key, result.order.id, 201, &json, &mut conn)?;
 
     Ok(HttpResponse::Created().json(result))
 }
@@ -352,9 +354,10 @@ pub async fn initiate_reversal(
 ) -> Result<HttpResponse, AppError> {
     let order_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
+    let scoped_idem_key = scoped_key(body.idempotency_key, "reversal_request");
 
     // Atomic idempotency: check for cached replay
-    if let Some(cached) = check_idempotency(body.idempotency_key, &mut conn)? {
+    if let Some(cached) = check_idempotency(scoped_idem_key, &mut conn)? {
         return Ok(cached);
     }
 
@@ -385,7 +388,7 @@ pub async fn initiate_reversal(
     // sentinel key is rolled back if any step fails, allowing client retry.
     let (_approval_id, response) = conn.transaction::<_, AppError, _>(|conn| {
         // Reserve idempotency key atomically inside transaction
-        if let Some(_cached) = reserve_idempotency_key(body.idempotency_key, "reversal_request", conn)? {
+        if let Some(_cached) = reserve_idempotency_key(scoped_idem_key, "reversal_request", conn)? {
             return Err(AppError::Conflict("Duplicate reversal request in progress".into()));
         }
 
@@ -428,7 +431,7 @@ pub async fn initiate_reversal(
     })?;
 
     let json = serde_json::to_value(&response).unwrap();
-    finalize_idempotency(body.idempotency_key, order_id, 202, &json, &mut conn)?;
+    finalize_idempotency(scoped_idem_key, order_id, 202, &json, &mut conn)?;
 
     Ok(HttpResponse::Accepted().json(response))
 }
@@ -450,9 +453,10 @@ pub async fn execute_reversal(
 ) -> Result<HttpResponse, AppError> {
     let order_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
+    let scoped_idem_key = scoped_key(body.idempotency_key, "reversal_executed");
 
     // Atomic idempotency: check for cached replay
-    if let Some(cached) = check_idempotency(body.idempotency_key, &mut conn)? {
+    if let Some(cached) = check_idempotency(scoped_idem_key, &mut conn)? {
         return Ok(cached);
     }
 
@@ -501,7 +505,7 @@ pub async fn execute_reversal(
     // NOW perform the financial mutation inside a transaction
     let reversal_entries = conn.transaction::<_, AppError, _>(|conn| {
         // Reserve idempotency key atomically inside transaction
-        if let Some(_cached) = reserve_idempotency_key(body.idempotency_key, "reversal_executed", conn)? {
+        if let Some(_cached) = reserve_idempotency_key(scoped_idem_key, "reversal_executed", conn)? {
             return Err(AppError::Internal("idempotency_race".into()));
         }
 
@@ -557,7 +561,7 @@ pub async fn execute_reversal(
     };
 
     let json = serde_json::to_value(&response).map_err(|e| AppError::Internal(e.to_string()))?;
-    finalize_idempotency(body.idempotency_key, order_id, 200, &json, &mut conn)?;
+    finalize_idempotency(scoped_idem_key, order_id, 200, &json, &mut conn)?;
 
     Ok(HttpResponse::Ok().json(response))
 }

@@ -39,6 +39,8 @@ pub async fn create_definition(
         )));
     }
 
+    validate_dimensions_and_filters(&body.kpi_type, &body.dimensions, &body.filters)?;
+
     let new = NewReportDefinition {
         name: body.name.clone(),
         description: body.description.clone(),
@@ -107,6 +109,11 @@ pub async fn update_definition(
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
     let _ctx = check_perm(&auth.0, "report.update", &req, &mut conn)?;
 
+    let existing: ReportDefinition = report_definitions::table
+        .find(report_id)
+        .select(ReportDefinition::as_select())
+        .first(&mut conn)?;
+
     if let Some(ref kpi) = body.kpi_type {
         if !KPI_TYPES.contains(&kpi.as_str()) {
             return Err(AppError::Validation(format!(
@@ -115,6 +122,21 @@ pub async fn update_definition(
             )));
         }
     }
+
+    let effective_kpi = body
+        .kpi_type
+        .as_deref()
+        .unwrap_or(existing.kpi_type.as_str())
+        .to_string();
+    let effective_dimensions = body
+        .dimensions
+        .clone()
+        .unwrap_or(existing.dimensions.clone());
+    let effective_filters = body
+        .filters
+        .clone()
+        .unwrap_or(existing.filters.clone());
+    validate_dimensions_and_filters(&effective_kpi, &effective_dimensions, &effective_filters)?;
 
     let changeset = UpdateReportDefinition {
         name: body.name.clone(),
@@ -213,6 +235,40 @@ fn valid_filters_for_kpi(kpi: &str) -> &[&str] {
         "project_milestones" => &[],
         _ => &[],
     }
+}
+
+fn validate_dimensions_and_filters(
+    kpi: &str,
+    dimensions: &serde_json::Value,
+    filters: &serde_json::Value,
+) -> Result<(), AppError> {
+    let valid_dims = valid_dimensions_for_kpi(kpi);
+    if let Some(dims) = dimensions.as_array() {
+        for d in dims {
+            if let Some(s) = d.as_str() {
+                if !valid_dims.contains(&s) && !valid_dims.is_empty() {
+                    return Err(AppError::Validation(format!(
+                        "Unsupported dimension '{}' for KPI '{}'. Valid: {:?}",
+                        s, kpi, valid_dims
+                    )));
+                }
+            }
+        }
+    }
+
+    let valid_fkeys = valid_filters_for_kpi(kpi);
+    if let Some(obj) = filters.as_object() {
+        for k in obj.keys() {
+            if !valid_fkeys.contains(&k.as_str()) && !valid_fkeys.is_empty() {
+                return Err(AppError::Validation(format!(
+                    "Unsupported filter '{}' for KPI '{}'. Valid: {:?}",
+                    k, kpi, valid_fkeys
+                )));
+            }
+        }
+    }
+
+    Ok(())
 }
 
 fn execute_kpi_query(
