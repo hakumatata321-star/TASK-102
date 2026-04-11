@@ -357,18 +357,15 @@ pub async fn initiate_reversal(
     if let Some(cached) = check_idempotency(body.idempotency_key, &mut conn)? {
         return Ok(cached);
     }
-    // Reserve key atomically before any mutation
-    if let Some(_cached) = reserve_idempotency_key(body.idempotency_key, "reversal_request", &mut conn)? {
-        return Err(AppError::Conflict("Duplicate reversal request in progress".into()));
-    }
+
+    // Object-level scope enforcement on target order
+    let scope_ctx = check_permission_no_approval(&auth.0, "order.read", &mut conn)?;
 
     let order: Order = orders::table
         .find(order_id)
         .select(Order::as_select())
         .first(&mut conn)?;
 
-    // Object-level scope enforcement on target order
-    let scope_ctx = check_permission_no_approval(&auth.0, "order.read", &mut conn)?;
     scope_ctx.enforce_scope(order.cashier_user_id, order.department.as_deref(), Some(&order.location))?;
 
     if order.status != OrderStatus::Paid && order.status != OrderStatus::Closed {
@@ -382,42 +379,53 @@ pub async fn initiate_reversal(
     let perm_code = if is_late { "order.reverse_late" } else { "order.reverse" };
     check_permission_no_approval(&auth.0, perm_code, &mut conn)?;
 
-    // Create approval request — NO financial mutation yet
     let perm_id = resolve_permission_id(perm_code, &mut conn)?;
-    let payload = serde_json::json!({
-        "type": "order_reversal",
-        "order_id": order_id,
-        "order_number": order.order_number,
-        "idempotency_key": body.idempotency_key,
-        "is_late_reversal": is_late,
-        "note": body.notes,
-        "requested_by": auth.0.sub,
-    });
 
-    let approval: ApprovalRequest = diesel::insert_into(approval_requests::table)
-        .values(&NewApprovalRequest {
-            permission_point_id: perm_id,
-            requester_user_id: auth.0.sub,
-            payload,
-        })
-        .returning(ApprovalRequest::as_returning())
-        .get_result(&mut conn)?;
+    // Wrap idempotency reservation + mutations in a transaction so the
+    // sentinel key is rolled back if any step fails, allowing client retry.
+    let (_approval_id, response) = conn.transaction::<_, AppError, _>(|conn| {
+        // Reserve idempotency key atomically inside transaction
+        if let Some(_cached) = reserve_idempotency_key(body.idempotency_key, "reversal_request", conn)? {
+            return Err(AppError::Conflict("Duplicate reversal request in progress".into()));
+        }
 
-    // Mark order as ReversalPending (no ledger changes)
-    diesel::update(orders::table.find(order_id))
-        .set((
-            orders::status.eq(OrderStatus::ReversalPending),
-            orders::notes.eq(body.notes.as_deref()),
-            orders::updated_at.eq(Utc::now()),
-        ))
-        .execute(&mut conn)?;
+        let payload = serde_json::json!({
+            "type": "order_reversal",
+            "order_id": order_id,
+            "order_number": order.order_number,
+            "idempotency_key": body.idempotency_key,
+            "is_late_reversal": is_late,
+            "note": body.notes,
+            "requested_by": auth.0.sub,
+        });
 
-    let response = serde_json::json!({
-        "message": "Reversal requires approval before financial mutation",
-        "approval_request_id": approval.id,
-        "order_id": order_id,
-        "status": "reversal_pending",
-    });
+        let approval: ApprovalRequest = diesel::insert_into(approval_requests::table)
+            .values(&NewApprovalRequest {
+                permission_point_id: perm_id,
+                requester_user_id: auth.0.sub,
+                payload,
+            })
+            .returning(ApprovalRequest::as_returning())
+            .get_result(conn)?;
+
+        // Mark order as ReversalPending (no ledger changes)
+        diesel::update(orders::table.find(order_id))
+            .set((
+                orders::status.eq(OrderStatus::ReversalPending),
+                orders::notes.eq(body.notes.as_deref()),
+                orders::updated_at.eq(Utc::now()),
+            ))
+            .execute(conn)?;
+
+        let response = serde_json::json!({
+            "message": "Reversal requires approval before financial mutation",
+            "approval_request_id": approval.id,
+            "order_id": order_id,
+            "status": "reversal_pending",
+        });
+
+        Ok((approval.id, response))
+    })?;
 
     let json = serde_json::to_value(&response).unwrap();
     finalize_idempotency(body.idempotency_key, order_id, 202, &json, &mut conn)?;

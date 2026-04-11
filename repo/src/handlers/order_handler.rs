@@ -225,6 +225,10 @@ pub async fn update_order(
     body: web::Json<UpdateOrderRequest>,
 ) -> Result<HttpResponse, AppError> {
     let order_id = path.into_inner();
+
+    body.validate()
+        .map_err(|e| AppError::Validation(e.to_string()))?;
+
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
     let ctx = check_perm_req(&auth.0, "order.update", &req, &mut conn)?;
 

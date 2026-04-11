@@ -73,7 +73,69 @@ pub struct CreateLineItemInput {
     pub description: String,
     #[validate(range(min = 1))]
     pub quantity: i32,
+    #[validate(range(min = 0))]
     pub unit_price_cents: i64,
     #[serde(default)]
+    #[validate(range(min = 0))]
     pub tax_cents: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use validator::Validate;
+
+    fn valid_input() -> CreateLineItemInput {
+        CreateLineItemInput {
+            sku: "SKU-001".to_string(),
+            description: "Test item".to_string(),
+            quantity: 2,
+            unit_price_cents: 1000,
+            tax_cents: 80,
+        }
+    }
+
+    #[test]
+    fn test_valid_line_item_passes_validation() {
+        let input = valid_input();
+        assert!(input.validate().is_ok());
+    }
+
+    #[test]
+    fn test_negative_unit_price_rejected() {
+        let mut input = valid_input();
+        input.unit_price_cents = -500;
+        let result = input.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.field_errors().contains_key("unit_price_cents"));
+    }
+
+    #[test]
+    fn test_negative_tax_cents_rejected() {
+        let mut input = valid_input();
+        input.tax_cents = -100;
+        let result = input.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.field_errors().contains_key("tax_cents"));
+    }
+
+    #[test]
+    fn test_zero_price_accepted() {
+        let mut input = valid_input();
+        input.unit_price_cents = 0;
+        input.tax_cents = 0;
+        assert!(input.validate().is_ok());
+    }
+
+    #[test]
+    fn test_zero_quantity_rejected() {
+        let mut input = valid_input();
+        input.quantity = 0;
+        let result = input.validate();
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.field_errors().contains_key("quantity"));
+    }
 }

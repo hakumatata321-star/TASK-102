@@ -131,13 +131,15 @@ pub struct CreateOrderRequest {
     pub department: Option<String>,
     pub customer_reference: Option<String>,
     pub notes: Option<String>,
+    #[validate(nested)]
     pub line_items: Vec<super::order_line_item::CreateLineItemInput>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Validate)]
 pub struct UpdateOrderRequest {
     pub customer_reference: Option<Option<String>>,
     pub notes: Option<Option<String>>,
+    #[validate(nested)]
     pub line_items: Option<Vec<super::order_line_item::CreateLineItemInput>>,
 }
 

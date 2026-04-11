@@ -862,6 +862,32 @@ assert_body "[I4] Team audit has after_hash" "after_hash"
 echo ""
 
 ###########################################################################
+echo "── Section 33: [T10] Reversal idempotency key not poisoned on failure ──"
+
+# Create a Draft order (NOT Paid) — reversal initiation must fail validation,
+# and the idempotency key must NOT be stuck at sentinel status=0 so the
+# client can retry with the same key once the order is in a valid state.
+http_post "$API/orders" '{"location":"TEST-A","line_items":[{"sku":"P1","description":"Poison test","quantity":1,"unit_price_cents":100,"tax_cents":0}]}'
+POISON_ORDER=$(jf id)
+# Order is in Draft — reversal should fail
+POISON_KEY="eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+http_post "$API/orders/$POISON_ORDER/reversals" "{\"idempotency_key\":\"$POISON_KEY\",\"notes\":\"should fail\"}"
+assert_status "[T10] Reversal on Draft order rejected" "400" "$_STATUS"
+
+# Now transition the order to Paid so reversal becomes valid
+http_post "$API/orders/$POISON_ORDER/transition" '{"target_status":"open"}'
+http_post "$API/orders/$POISON_ORDER/transition" '{"target_status":"tendering"}'
+PKEY2="ffffffff-ffff-ffff-ffff-ffffffffffff"
+http_post "$API/orders/$POISON_ORDER/payments" "{\"tender_type\":\"cash\",\"amount_cents\":100,\"idempotency_key\":\"$PKEY2\"}"
+assert_status "[T10] Order paid for retry" "201" "$_STATUS"
+
+# Retry reversal with SAME idempotency key — must succeed (not 409 Conflict)
+http_post "$API/orders/$POISON_ORDER/reversals" "{\"idempotency_key\":\"$POISON_KEY\",\"notes\":\"retry after fix\"}"
+assert_status "[T10] Retry with same key succeeds after fix" "202" "$_STATUS"
+assert_body "[T10] Retry returns approval_request_id" "approval_request_id"
+echo ""
+
+###########################################################################
 echo ""
 echo "============================================"
 echo "  API TEST RESULTS"
