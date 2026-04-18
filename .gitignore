@@ -26,4 +26,3 @@ repo/.env.*
 
 # Local temp outputs
 *.log
-.tmp/
