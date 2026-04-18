@@ -57,3 +57,52 @@ pub fn reset_failed_attempts(conn: &mut PgConnection, user_id: Uuid) -> Result<(
         .execute(conn)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Duration;
+
+    fn make_user(locked_until: Option<chrono::DateTime<Utc>>) -> crate::models::user::User {
+        crate::models::user::User {
+            id: Uuid::nil(),
+            username: "testuser".into(),
+            password_hash_enc: vec![],
+            gov_id_enc: None,
+            gov_id_last4: None,
+            role_id: Uuid::nil(),
+            department: None,
+            location: None,
+            is_active: true,
+            failed_attempts: 0,
+            locked_until,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_not_locked_when_no_lockout() {
+        let user = make_user(None);
+        assert!(check_lockout(&user).is_ok());
+    }
+
+    #[test]
+    fn test_not_locked_when_time_passed() {
+        let past = Utc::now() - Duration::seconds(60);
+        let user = make_user(Some(past));
+        assert!(check_lockout(&user).is_ok());
+    }
+
+    #[test]
+    fn test_locked_when_future_time() {
+        let future = Utc::now() + Duration::seconds(900);
+        let user = make_user(Some(future));
+        let result = check_lockout(&user);
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            AppError::AccountLocked(_) => {}
+            other => panic!("Expected AccountLocked, got {:?}", other),
+        }
+    }
+}

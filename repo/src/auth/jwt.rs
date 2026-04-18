@@ -92,3 +92,95 @@ pub fn decode_token(token: &str, config: &AppConfig) -> Result<Claims, AppError>
 
     Ok(data.claims)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::role::{DataScope, Role};
+    use crate::models::user::User;
+    use chrono::Utc;
+
+    fn test_config(secret: &str) -> AppConfig {
+        AppConfig {
+            database_url: "unused".into(),
+            jwt_secret: secret.into(),
+            jwt_access_ttl_secs: 3600,
+            jwt_refresh_ttl_secs: 86400,
+            field_encryption_key: [0u8; 32],
+            lockout_threshold: 5,
+            lockout_duration_secs: 900,
+        }
+    }
+
+    fn test_user() -> User {
+        User {
+            id: Uuid::nil(),
+            username: "testuser".into(),
+            password_hash_enc: vec![],
+            gov_id_enc: None,
+            gov_id_last4: None,
+            role_id: Uuid::nil(),
+            department: Some("sales".into()),
+            location: Some("store-1".into()),
+            is_active: true,
+            failed_attempts: 0,
+            locked_until: None,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    fn test_role() -> Role {
+        Role {
+            id: Uuid::nil(),
+            name: "TestRole".into(),
+            description: None,
+            data_scope: DataScope::Department,
+            scope_value: None,
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn test_issue_and_decode_access_token() {
+        let config = test_config("test-secret-key");
+        let user = test_user();
+        let role = test_role();
+        let token = issue_access_token(&user, &role, &[], &config)
+            .expect("issue_access_token should succeed");
+        let claims = decode_token(&token, &config)
+            .expect("decode_token should succeed");
+        assert_eq!(claims.sub, user.id);
+        assert_eq!(claims.role_id, role.id);
+        assert_eq!(claims.role_name, role.name);
+        assert_eq!(claims.token_type, "access");
+        assert_eq!(claims.department, user.department);
+        assert_eq!(claims.location, user.location);
+    }
+
+    #[test]
+    fn test_refresh_token_type() {
+        let config = test_config("test-secret-key");
+        let user_id = Uuid::nil();
+        let token = issue_refresh_token(user_id, &config)
+            .expect("issue_refresh_token should succeed");
+        let claims = decode_token(&token, &config)
+            .expect("decode_token should succeed");
+        assert_eq!(claims.token_type, "refresh");
+        assert_eq!(claims.sub, user_id);
+    }
+
+    #[test]
+    fn test_decode_wrong_secret_fails() {
+        let config_encode = test_config("secret1");
+        let config_decode = test_config("secret2");
+        let user = test_user();
+        let role = test_role();
+        let token = issue_access_token(&user, &role, &[], &config_encode)
+            .expect("issue_access_token should succeed");
+        let result = decode_token(&token, &config_decode);
+        assert!(result.is_err(), "Decoding with wrong secret should fail");
+    }
+}

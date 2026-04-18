@@ -1,3 +1,5 @@
+**Type: backend**
+
 # RetailOps — Data & Transaction Governance API
 
 Offline-first REST API for multi-location retail operations: POS transactions, participant management, dataset versioning, notifications, reporting, and full audit trail.
@@ -10,14 +12,60 @@ Offline-first REST API for multi-location retail operations: POS transactions, p
 ## Quick Start
 
 ```bash
-docker compose up -d      # Starts PostgreSQL + API
+docker-compose up -d      # Starts PostgreSQL + API (hyphen form)
+docker compose up -d      # Also accepted (space form)
 curl localhost:8081/api/v1/health   # Verify healthy
 
 # Create initial admin user (one-time, only works with empty DB)
 curl -X POST localhost:8081/api/v1/auth/bootstrap \
   -H "Content-Type: application/json" \
-  -d '{"username":"admin","password":"SecurePass123!"}'
+  -d '{"username":"testadmin","password":"TestAdmin1234"}'
 ```
+
+## Demo Credentials
+
+The database is seeded with the following roles and bootstrap credentials. Use these for development and testing.
+
+| Role | Username | Password | Notes |
+|------|----------|----------|-------|
+| System Administrator | testadmin | TestAdmin1234 | Created by bootstrap endpoint |
+| Store Manager | manager_approver | ManagerPass123 | Created by API test suite |
+| Cashier | cashier1 | Cashier12345! | Created by API test suite |
+| Analyst | analyst_user | AnalystPass123! | Must be created after bootstrap (see below) |
+| Content Coordinator | coordinator_user | CoordPass123! | Must be created after bootstrap (see below) |
+
+### Creating Analyst and Content Coordinator Users
+
+After bootstrapping (with `testadmin` token), create the remaining role users:
+
+```bash
+# Obtain admin token first
+TOKEN=$(curl -s -X POST localhost:8081/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testadmin","password":"TestAdmin1234"}' | jq -r '.access_token')
+
+# Create Analyst user (role ID: a0000000-0000-0000-0000-000000000004)
+curl -X POST localhost:8081/api/v1/users \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"analyst_user","password":"AnalystPass123!","role_id":"a0000000-0000-0000-0000-000000000004"}'
+
+# Create Content Coordinator user (role ID: a0000000-0000-0000-0000-000000000005)
+curl -X POST localhost:8081/api/v1/users \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"username":"coordinator_user","password":"CoordPass123!","role_id":"a0000000-0000-0000-0000-000000000005"}'
+```
+
+Role IDs (seeded by migrations):
+
+| Role | UUID |
+|------|------|
+| System Administrator | a0000000-0000-0000-0000-000000000001 |
+| Store Manager | a0000000-0000-0000-0000-000000000002 |
+| Cashier | a0000000-0000-0000-0000-000000000003 |
+| Analyst | a0000000-0000-0000-0000-000000000004 |
+| Content Coordinator | a0000000-0000-0000-0000-000000000005 |
 
 ## Configuration (Environment Variables)
 
