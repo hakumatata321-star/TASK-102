@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::schema::register_closings;
 
 #[derive(Debug, Clone, PartialEq, diesel_derive_enum::DbEnum, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[ExistingTypePath = "crate::schema::sql_types::ClosingStatusType"]
 pub enum ClosingStatus {
     #[db_rename = "pending"]

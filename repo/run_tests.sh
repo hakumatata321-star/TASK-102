@@ -38,6 +38,8 @@ rm -rf target/release/.fingerprint/retailops-* target/release/deps/retailops-* 2
 
 docker run --rm \
   -v "${PROJ_PATH}:/app" \
+  -v cargo-registry:/usr/local/cargo/registry \
+  -v cargo-git:/usr/local/cargo/git \
   -w /app \
   rust:1.88-bookworm \
   bash -c "
@@ -64,6 +66,8 @@ echo ""
 
 docker run --rm \
   -v "${PROJ_PATH}:/app" \
+  -v cargo-registry:/usr/local/cargo/registry \
+  -v cargo-git:/usr/local/cargo/git \
   -w /app \
   rust:1.88-bookworm \
   bash -c "
@@ -119,7 +123,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 unset MSYS_NO_PATHCONV
-bash API_tests/run_api_tests.sh
+API_BASE_URL="http://localhost:8081" bash API_tests/run_api_tests.sh
 API_EXIT=$?
 
 ###########################################################################

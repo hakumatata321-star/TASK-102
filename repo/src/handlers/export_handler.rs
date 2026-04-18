@@ -342,12 +342,12 @@ pub async fn fail_job(
 pub async fn cancel_job(
     pool: web::Data<DbPool>,
     auth: AuthenticatedUser,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<Uuid>,
 ) -> Result<HttpResponse, AppError> {
     let job_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
-    let _ctx = check_perm_req(&auth.0, "report.export", &req, &mut conn)?;
+    check_permission_no_approval(&auth.0, "report.export", &mut conn)?;
 
     let job: ExportJob = export_jobs::table
         .find(job_id)

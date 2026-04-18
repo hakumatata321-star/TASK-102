@@ -194,12 +194,12 @@ pub async fn get_closing(
 pub async fn confirm_closing(
     pool: web::Data<DbPool>,
     auth: AuthenticatedUser,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<Uuid>,
 ) -> Result<HttpResponse, AppError> {
     let closing_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
-    let _ctx = check_permission_for_request(&auth.0, "register.confirm_variance", req.method().as_str(), req.path(), &mut conn)?;
+    let _ctx = check_permission_no_approval(&auth.0, "register.confirm_variance", &mut conn)?;
 
     let closing: RegisterClosing = register_closings::table
         .find(closing_id)

@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::schema::export_jobs;
 
 #[derive(Debug, Clone, PartialEq, diesel_derive_enum::DbEnum, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 #[ExistingTypePath = "crate::schema::sql_types::ExportStatusType"]
 pub enum ExportStatus {
     #[db_rename = "queued"]

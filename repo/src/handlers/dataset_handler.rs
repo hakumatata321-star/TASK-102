@@ -437,13 +437,13 @@ pub async fn rollback(
 pub async fn execute_rollback(
     pool: web::Data<DbPool>,
     auth: AuthenticatedUser,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<Uuid>,
     body: web::Json<ExecuteRollbackRequest>,
 ) -> Result<HttpResponse, AppError> {
     let dataset_id = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
-    let _ctx = check_permission_for_request(&auth.0, "dataset.rollback", req.method().as_str(), req.path(), &mut conn)?;
+    let _ctx = check_permission_no_approval(&auth.0, "dataset.rollback", &mut conn)?;
 
     // Verify the approval request is approved
     let approval: crate::models::approval::ApprovalRequest = approval_requests::table

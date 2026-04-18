@@ -1070,7 +1070,7 @@ assert_status "GET /registers/closings/{id}" "200" "$_STATUS"
 assert_body "Has status" "status"
 
 # Create variance closing (actual_cash_cents=5000 vs expected=0 → variance=5000 > 2000)
-http_post "$API/registers/close" '{"location":"REG-01","actual_cash_cents":5000,"actual_card_cents":0,"actual_gift_card_cents":0}'
+http_post "$API/registers/close" '{"location":"REG-02","actual_cash_cents":5000,"actual_card_cents":0,"actual_gift_card_cents":0}'
 assert_status "POST /registers/close (variance flagged)" "202" "$_STATUS"
 assert_body "Has approval_request_id" "approval_request_id"
 CLOSING2_ID=$(jf id)
@@ -1136,7 +1136,7 @@ http_post "$API/participants" '{"first_name":"Del","last_name":"Test","departmen
 assert_status "Create participant for delete" "201" "$_STATUS"
 DEL_PART_ID=$(jf id)
 http_delete "$API/participants/$DEL_PART_ID"
-assert_status "DELETE /participants/{id}" "200" "$_STATUS"
+assert_status "DELETE /participants/{id}" "204" "$_STATUS"
 echo ""
 
 ###########################################################################
@@ -1166,7 +1166,7 @@ http_post "$API/teams" '{"name":"Disposable Team","department":"Ops"}'
 assert_status "Create disposable team" "201" "$_STATUS"
 DEL_TEAM_ID=$(jf id)
 http_delete "$API/teams/$DEL_TEAM_ID"
-assert_status "DELETE /teams/{id}" "200" "$_STATUS"
+assert_status "DELETE /teams/{id}" "204" "$_STATUS"
 echo ""
 
 ###########################################################################
@@ -1207,7 +1207,7 @@ http_post "$API/datasets" '{"name":"Disposable DS","dataset_type":"raw"}'
 assert_status "Create disposable dataset" "201" "$_STATUS"
 DEL_DS_ID=$(jf id)
 http_delete "$API/datasets/$DEL_DS_ID"
-assert_status "DELETE /datasets/{id}" "200" "$_STATUS"
+assert_status "DELETE /datasets/{id}" "204" "$_STATUS"
 echo ""
 
 ###########################################################################

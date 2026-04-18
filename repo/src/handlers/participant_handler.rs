@@ -9,7 +9,7 @@ use crate::db::DbPool;
 use crate::errors::AppError;
 use crate::models::participant::*;
 use crate::models::tag::*;
-use crate::rbac::guard::check_permission_for_request;
+use crate::rbac::guard::{check_permission_for_request, check_permission_no_approval};
 use crate::schema::{participant_tags, participants, tags};
 
 fn check_perm(auth: &crate::auth::jwt::Claims, code: &str, req: &HttpRequest, conn: &mut diesel::PgConnection)
@@ -261,12 +261,12 @@ pub async fn set_tags(
 pub async fn get_tags(
     pool: web::Data<DbPool>,
     auth: AuthenticatedUser,
-    req: HttpRequest,
+    _req: HttpRequest,
     path: web::Path<Uuid>,
 ) -> Result<HttpResponse, AppError> {
     let pid = path.into_inner();
     let mut conn = pool.get().map_err(crate::errors::pool_err)?;
-    let ctx = check_perm(&auth.0, "participant.read", &req, &mut conn)?;
+    let ctx = check_permission_no_approval(&auth.0, "participant.read", &mut conn)?;
     let p: Participant = participants::table.find(pid).select(Participant::as_select()).first(&mut conn)?;
     ctx.enforce_scope(p.created_by, p.department.as_deref(), p.location.as_deref())?;
 
